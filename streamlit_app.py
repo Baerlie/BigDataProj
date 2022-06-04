@@ -49,6 +49,9 @@ for row in tweets:
 for row in counts:
     st.write(f"Tag {row[0]} had {row[1]} tweets in the last minute!")
 
+# map
+st.map(data=None, zoom=None, use_container_width=True)
+
 ############ End page content ############
 
 
