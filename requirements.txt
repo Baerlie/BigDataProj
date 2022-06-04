@@ -2,5 +2,10 @@ altair
 pandas
 streamlit
 pyodbc==4.0.32
+pystan
 numpy
+matplotlib
+ephem
+scikit-learn
+pmdarima
 fbprophet
