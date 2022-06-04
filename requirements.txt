@@ -5,7 +5,7 @@ pyodbc==4.0.32
 numpy==1.22.4
 matplotlib
 pystan==3.4.0
-ephem
-scikit-learn
-pmdarima
-fbprophet
+#ephem
+#scikit-learn
+#pmdarima
+#fbprophet
