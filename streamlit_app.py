@@ -5,17 +5,6 @@ import pandas as pd
 import streamlit as st
 import pyodbc
 
-"""
-# Welcome to Streamlit!
-
-Edit `/streamlit_app.py` to customize this app to your heart's desire :heart:
-
-If you have any questions, checkout our [documentation](https://docs.streamlit.io) and [community
-forums](https://discuss.streamlit.io).
-
-In the meantime, below is an example of what you can do with just a few lines of code:
-"""
-
 # Initialize SQL connection.
 # Uses st.experimental_singleton to only run once.
 @st.experimental_singleton
@@ -46,11 +35,14 @@ tweets = run_query("SELECT top 10 * from twitter_api.TweetText")
 
 
 ############ Display page content ############
-st.header('Big Data Project Dashboard (Twitter Use Case)')
+"""
+# Big Data Project Dashboard (Twitter Use Case)
+### Weigl-Pollack & Pscheidl ###
+"""
 
 # Print latest tweets
 for row in tweets:
-    st.write(f"Tag:{row[2]}, Tweet:{row[0]}")
+    st.write(f"*Tag:* {row[2]}, *Tweet:* {row[0]}")
 
 
 # Print results.
