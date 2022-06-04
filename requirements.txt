@@ -2,9 +2,9 @@ altair
 pandas
 streamlit
 pyodbc==4.0.32
-pystan
 numpy
 matplotlib
+pystan
 ephem
 scikit-learn
 pmdarima
