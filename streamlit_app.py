@@ -4,6 +4,7 @@ import math
 import pandas as pd
 import streamlit as st
 import pyodbc
+import pydeck as pdk
 
 # Initialize SQL connection.
 # Uses st.experimental_singleton to only run once.
@@ -50,29 +51,44 @@ for row in counts:
     st.write(f"Tag {row[0]} had {row[1]} tweets in the last minute!")
 
 # map
-st.map(data=None, zoom=None, use_container_width=True)
+MAP_POINT_DATA = pd.DataFrame(data={
+    'lng': [-74.0060152, 16.3725042, -122.419906, 116.3912757, -46.6333824, 13.3888599, 2.320041, -0.1276474], 
+    'lat': [40.741895, 48.2083537, 37.7790262, 39.906217, -23.5506507, 52.5170365, 48.8588897, 51.5073219]
+})
+
+# lng,lat
+# -74.0060152,40.741895 New York
+# 16.3725042,48.2083537 Vienna
+# -122.419906,37.7790262 San Francisco
+# 116.3912757,39.906217 Beijing
+# -46.6333824,-23.5506507 Sao Paulo
+# 13.3888599,52.5170365 Berlin
+# 2.320041, 48.8588897 Paris
+# -0.1276474, 51.5073219 London
+
+layer = pdk.Layer(
+    "HexagonLayer",
+    MAP_POINT_DATA,
+    get_position="[lng, lat]",
+    auto_highlight=True,
+    elevation_scale=50,
+    pickable=True,
+    elevation_range=[0, 3000],
+    extruded=True,
+    coverage=1,
+)
+# # Set the viewport location
+# view_state = pdk.ViewState(
+#     longitude=-1.415, latitude=52.2323, zoom=6, min_zoom=5, max_zoom=15, pitch=40.5, bearing=-27.36
+# )
+# Combined all of it and render a viewport
+r = pdk.Deck(
+    map_style="mapbox://styles/mapbox/light-v9",
+    layers=[layer],
+    #initial_view_state=view_state,
+    tooltip={"html": "<b>Elevation Value:</b>", "style": {"color": "white"}},
+)
+st.pydeck_chart(r)
+
 
 ############ End page content ############
-
-
-
-# with st.echo(code_location='below'):
-#     total_points = st.slider("Number of points in spiral", 1, 5000, 2000)
-#     num_turns = st.slider("Number of turns in spiral", 1, 100, 9)
-
-#     Point = namedtuple('Point', 'x y')
-#     data = []
-
-#     points_per_turn = total_points / num_turns
-
-#     for curr_point_num in range(total_points):
-#         curr_turn, i = divmod(curr_point_num, points_per_turn)
-#         angle = (curr_turn + 1) * 2 * math.pi * i / points_per_turn
-#         radius = curr_point_num / total_points
-#         x = radius * math.cos(angle)
-#         y = radius * math.sin(angle)
-#         data.append(Point(x, y))
-
-#     st.altair_chart(alt.Chart(pd.DataFrame(data), height=500, width=500)
-#         .mark_circle(color='#0068c9', opacity=0.5)
-#         .encode(x='x:Q', y='y:Q'))

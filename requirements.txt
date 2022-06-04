@@ -2,3 +2,4 @@ altair
 pandas
 streamlit
 pyodbc==4.0.32
+fbprophet
