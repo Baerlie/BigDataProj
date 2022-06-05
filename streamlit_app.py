@@ -1,10 +1,12 @@
-from collections import namedtuple
-import altair as alt
-import math
+#from collections import namedtuple
+#import altair as alt
+#import math
 import pandas as pd
+from sqlalchemy import column
 import streamlit as st
 import pyodbc
 import pydeck as pdk
+from streamlit_autorefresh import st_autorefresh
 
 # Initialize SQL connection.
 # Uses st.experimental_singleton to only run once.
@@ -31,64 +33,99 @@ def run_query(query):
         cur.execute(query)
         return cur.fetchall()
 
-counts = run_query("SELECT top 10 * from twitter_api.HashtagAggregations;")
-tweets = run_query("SELECT top 10 * from twitter_api.TweetText")
+#counts = run_query("SELECT top 10 * from twitter_api.HashtagAggregations;")
+#tweets = run_query("SELECT top 10 * from twitter_api.TweetText order by insertedAt")
+
+def getTweets(tag, minutes):
+    #tweets = run_query(f"SELECT TOP {count} * FROM twitter_api.TweetText WHERE Tag LIKE '{tag}' ORDER BY insertedAt DESC")
+    tweets = run_query(f"select * from twitter_api.TweetText where DATEDIFF(second, insertedAt, GETDATE()) < {minutes*60} and Tag like '{tag}'")
+    lst = []
+    for row in tweets:
+        lst.insert(len(lst), [row[2], row[0], row[1]])
+        #lst.reverse()
+    return pd.DataFrame(lst, columns=('Tag', 'Text', 'Time'))
+
+def getTags():
+    tags = run_query(f"select distinct Tag from twitter_api.TweetText order by Tag")
+    lst = ['%']
+    for row in tags:
+        lst.insert(len(lst), row[0])
+    return pd.DataFrame(lst)
+
+def getTweetsPerMinute(map):
+    map2 = map.copy(deep=False)
+    i = 0
+    while i<len(map2):
+        tpm = run_query(f"select sum(count) as tpm from twitter_api.HashtagAggregations where datediff(second, LastUpdatedAt, getdate()) <= 60 and Tagname='{map2.iloc[i]['city']}' group by Tagname")
+        if len(tpm) > 0:
+            map2.loc[i, 'tweetsperminute'] = tpm[0][0]
+            #print(tpm[0][0])
+        i = i+1
+    #print(map2)
+    return map2
 
 
 ############ Display page content ############
+count = st_autorefresh(interval=10000, key="refreshpage")
+# refresh every 10 seconds to get actual data (no other option in streamlit)
+
 """
-# Big Data Project Dashboard (Twitter Use Case)
+# Twitter Use Case Dashboard
 ### Weigl-Pollack & Pscheidl ###
 """
-
-# Print latest tweets
-for row in tweets:
-    st.write(f"*Tag:* {row[2]}, *Tweet:* {row[0]}")
-
-
-# Print results.
-for row in counts:
-    st.write(f"Tag {row[0]} had {row[1]} tweets in the last minute!")
-
-# map
-MAP_POINT_DATA = pd.DataFrame(data={
-    'lng': [-74.0060152, 16.3725042, -122.419906, 116.3912757, -46.6333824, 13.3888599, 2.320041, -0.1276474], 
-    'lat': [40.741895, 48.2083537, 37.7790262, 39.906217, -23.5506507, 52.5170365, 48.8588897, 51.5073219]
-})
-
-# lng,lat
-# -74.0060152,40.741895 New York
-# 16.3725042,48.2083537 Vienna
-# -122.419906,37.7790262 San Francisco
-# 116.3912757,39.906217 Beijing
-# -46.6333824,-23.5506507 Sao Paulo
-# 13.3888599,52.5170365 Berlin
-# 2.320041, 48.8588897 Paris
-# -0.1276474, 51.5073219 London
-
-layer = pdk.Layer(
-    "HexagonLayer",
-    MAP_POINT_DATA,
-    get_position="[lng, lat]",
-    auto_highlight=True,
-    elevation_scale=50,
-    pickable=True,
-    elevation_range=[0, 3000],
-    extruded=True,
-    coverage=1,
+# map data
+MAP_POINT_DATA = pd.DataFrame(
+    [
+       [-74.0060152,40.741895,'New York', 0],
+       [16.3725042,48.2083537, 'Vienna', 0],
+       [-122.419906,37.7790262, 'San Francisco', 0],
+       [116.3912757,39.906217, 'Beijing', 0],
+       [-46.6333824,-23.5506507, 'Sao Paulo', 0],
+       [13.3888599,52.5170365, 'Berlin', 0],
+       [2.320041, 48.8588897, 'Paris', 0],
+       [-0.1276474, 51.5073219, 'London', 0]
+    ],
+    columns = ['lng', 'lat', 'city', 'tweetsperminute']
 )
-# # Set the viewport location
-# view_state = pdk.ViewState(
-#     longitude=-1.415, latitude=52.2323, zoom=6, min_zoom=5, max_zoom=15, pitch=40.5, bearing=-27.36
-# )
-# Combined all of it and render a viewport
+
+MAP_POINT_DATA = getTweetsPerMinute(MAP_POINT_DATA)
+
+tweets_tag = st.selectbox(
+    'Select City',
+     getTags()
+)
+
+minutes = st.slider(
+    'Display Tweets of the last ... minutes',
+    min_value=0,
+    max_value=15,
+    value = 2
+)
+
+df_tweets = getTweets(tweets_tag, minutes)
+table = st.empty()
+table.dataframe(df_tweets)
+
+'Showing tweets for ', tweets_tag
+
+layers = [
+    pdk.Layer(
+        "ScatterplotLayer",
+        data = MAP_POINT_DATA,
+        pickable=True,
+        get_position="[lng, lat]",
+        get_color='[200, 30, 0, 160]',
+        get_radius=200000,
+    )
+]
+
+#Combine all of it and render a viewport
 r = pdk.Deck(
     map_style="mapbox://styles/mapbox/light-v9",
-    layers=[layer],
-    #initial_view_state=view_state,
-    tooltip={"html": "<b>Elevation Value:</b>", "style": {"color": "white"}},
+    layers = layers,
+    tooltip={"html": "<b>{city}</b><br/>Tweets per Minute: {tweetsperminute}", "style": {"color": "white"}},
 )
-st.pydeck_chart(r)
 
+st.pydeck_chart(r)
 
 ############ End page content ############
