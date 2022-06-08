@@ -7,6 +7,7 @@ import streamlit as st
 import pyodbc
 import pydeck as pdk
 from streamlit_autorefresh import st_autorefresh
+import pickle
 
 # Initialize SQL connection.
 # Uses st.experimental_singleton to only run once.
@@ -32,9 +33,6 @@ def run_query(query):
     with conn.cursor() as cur:
         cur.execute(query)
         return cur.fetchall()
-
-#counts = run_query("SELECT top 10 * from twitter_api.HashtagAggregations;")
-#tweets = run_query("SELECT top 10 * from twitter_api.TweetText order by insertedAt")
 
 def getTweets(tag, minutes):
     #tweets = run_query(f"SELECT TOP {count} * FROM twitter_api.TweetText WHERE Tag LIKE '{tag}' ORDER BY insertedAt DESC")
@@ -64,32 +62,39 @@ def getTweetsPerMinute(map):
     #print(map2)
     return map2
 
-
-############ Display page content ############
-count = st_autorefresh(interval=10000, key="refreshpage")
-# refresh every 10 seconds to get actual data (no other option in streamlit)
-
-"""
-# Twitter Use Case Dashboard
-### Weigl-Pollack & Pscheidl ###
-"""
 # map data
 MAP_POINT_DATA = pd.DataFrame(
     [
-       [-74.0060152,40.741895,'New York', 0],
+       [-74.0060152,40.741895,'NewYork', 0],
        [16.3725042,48.2083537, 'Vienna', 0],
-       [-122.419906,37.7790262, 'San Francisco', 0],
+       [-122.419906,37.7790262, 'SanFrancisco', 0],
        [116.3912757,39.906217, 'Beijing', 0],
-       [-46.6333824,-23.5506507, 'Sao Paulo', 0],
+       [-46.6333824,-23.5506507, 'SaoPaulo', 0],
        [13.3888599,52.5170365, 'Berlin', 0],
        [2.320041, 48.8588897, 'Paris', 0],
-       [-0.1276474, 51.5073219, 'London', 0]
+       [-0.1276474, 51.5073219, 'London', 0],
+       [36.81667, -1.28333, 'Nairobi', 0],
+       [18.42322, -33.92584, 'CapeTown', 0],
+       [100.489664708, 13.751330328, 'Bangkok', 0],
+       [151.2114425, -33.863578, 'Sydney', 0]
     ],
     columns = ['lng', 'lat', 'city', 'tweetsperminute']
 )
 
+############ Display page content ############
+count = st_autorefresh(interval=15000, key="refreshpage")
+# refresh every 10 seconds to get actual data (no other option in streamlit)
+
+"""
+# Twitter Use Case Dashboard
+#### Weigl-Pollack & Pscheidl ####
+"""
+
 MAP_POINT_DATA = getTweetsPerMinute(MAP_POINT_DATA)
 
+"""
+## Latest Tweets ##
+"""
 tweets_tag = st.selectbox(
     'Select City',
      getTags()
@@ -108,6 +113,10 @@ table.dataframe(df_tweets)
 
 'Showing tweets for ', tweets_tag
 
+
+"""
+## Tweet Map ##
+"""
 layers = [
     pdk.Layer(
         "ScatterplotLayer",
@@ -127,5 +136,10 @@ r = pdk.Deck(
 )
 
 st.pydeck_chart(r)
+
+
+"""
+## Tweets Prediction ##
+"""
 
 ############ End page content ############
