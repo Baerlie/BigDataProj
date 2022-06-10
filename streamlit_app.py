@@ -1,7 +1,10 @@
 from datetime import datetime
+from operator import index
 import pandas as pd
+import sqlalchemy 
 from sqlalchemy import column
 import streamlit as st
+import pytz
 import pyodbc
 import pydeck as pdk
 from streamlit_autorefresh import st_autorefresh
@@ -9,6 +12,8 @@ import pickle
 from confluent_kafka import Consumer
 from math import sqrt
 from sklearn.metrics import mean_squared_error
+import matplotlib.pyplot as plt
+import numpy as np
 
 # kafka connection
 KAFKA_TOPIC   = "twitter_alert"
@@ -37,15 +42,12 @@ MAP_POINT_DATA = pd.DataFrame(
 # Uses st.experimental_singleton to only run once.
 @st.experimental_singleton
 def init_db_connection():
-    return pyodbc.connect(
-        "DRIVER={ODBC Driver 17 for SQL Server};SERVER="
-        + st.secrets["server"]
-        + ";DATABASE="
-        + st.secrets["database"]
-        + ";UID="
-        + st.secrets["username"]
-        + ";PWD="
-        + st.secrets["password"]
+    return sqlalchemy.create_engine(
+        "mssql+pyodbc://"
+        + st.secrets["username"] + ":" + st.secrets["password"]
+        + "@" + st.secrets["server"]
+        + "/" + st.secrets["database"]        
+        + "?driver=ODBC+Driver+17+for+SQL+Server"
     )
 db_conn = init_db_connection()
 
@@ -69,55 +71,67 @@ def load_model():
     return regressor
 regr_model = load_model()
 
-# Perform query.
-# Uses st.experimental_memo to only rerun when the query changes or after 10 secs.
-@st.experimental_memo(ttl=10)
-def run_query(query):
-    with db_conn.cursor() as cur:
-        cur.execute(query)
-        return cur.fetchall()
-
+# get tweets of the last x minutes for a specific tag
 def getTweets(tag, minutes):
-    tweets = run_query(f"select * from twitter_api.TweetText where DATEDIFF(second, insertedAt, GETDATE()) < {minutes*60} and Tag like '{tag}' order by insertedAt desc")
-    lst = []
-    for row in tweets:
-        lst.insert(len(lst), [row[2], row[0], row[1]])
-    return pd.DataFrame(lst, columns=('Tag', 'Text', 'Time'))
+    try:
+        tweets = pd.read_sql_query(f"select Tag, Content, insertedAt from twitter_api.TweetText \
+                                    where DATEDIFF(second, insertedAt, GETDATE()) < {(minutes+1)*60} and Tag like '{tag}' \
+                                    order by insertedAt desc", db_conn)
+    except:
+        tweets = pd.DataFrame()
+    return tweets
 
 def getTags():
-    tags = run_query(f"select distinct TagName from twitter_api.HashtagAggregations order by TagName")
-    lst = ['%']
-    for row in tags:
-        lst.insert(len(lst), row[0])
-    return pd.DataFrame(lst)
+    try:
+        tags = pd.read_sql_query("select '%' as TagName union select distinct TagName \
+                                from twitter_api.HashtagAggregations order by TagName", db_conn)
+    except:
+        tags = pd.DataFrame()
+    return tags
 
 def getTweetsPerMinute(map):
     map2 = map.copy(deep=False)
     i = 0
 
-    tpm = pd.read_sql_query("WITH TPM AS\
-                        (\
-                        SELECT\
-                            Tagname, Count, Start, [End],\
-                            ROW_NUMBER() OVER(PARTITION BY Tagname ORDER BY Start DESC) AS 'RowNumber'\
-                            FROM twitter_api.HashtagAggregations\
-                        )\
-                        SELECT Tagname, max(Count) as Count, Start \
-                        FROM TPM \
-                        WHERE datediff(second, Start, (select max([Start]) from TPM)) < 120\
-                        and datediff(second, Start, (select max([Start]) from TPM)) >= 60\
-                        group by Tagname, Start", db_conn)
+    try:
+        tpm = pd.read_sql_query("WITH TPM AS\
+                            (\
+                            SELECT\
+                                Tagname, Count, Start, [End],\
+                                ROW_NUMBER() OVER(PARTITION BY Tagname ORDER BY Start DESC) AS 'RowNumber'\
+                                FROM twitter_api.HashtagAggregations\
+                            )\
+                            SELECT Tagname, max(Count) as Count, Start \
+                            FROM TPM \
+                            WHERE datediff(second, Start, (select max([Start]) from TPM)) < 120\
+                            and datediff(second, Start, (select max([Start]) from TPM)) >= 60\
+                            group by Tagname, Start", db_conn)
 
-    df_tpm = pd.DataFrame(tpm, columns =['Tagname', 'Count', 'Start'])
-    print(df_tpm)
+        df_tpm = pd.DataFrame(tpm, columns =['Tagname', 'Count', 'Start'])
 
-    # while i<len(map2):
-    #     tpm = run_query(f"select sum(count) as tpm from twitter_api.HashtagAggregations where datediff(second, LastUpdatedAt, getdate()) <= 60 and Tagname='{map2.iloc[i]['city']}' group by Tagname")
-    #     if len(tpm) > 0:
-    #         map2.loc[i, 'tweetsperminute'] = tpm[0][0]
-    #     i = i+1
-    #print(map2)
+        while i<len(map2):
+            if len(df_tpm[df_tpm['Tagname'] == map2.loc[i, 'city']]) > 0:
+                rw = df_tpm.loc[df_tpm['Tagname'] == map2.loc[i, 'city']]
+                map2.loc[i, 'tweetsperminute'] = rw.iloc[0]['Count']
+            else:
+                map2.loc[i, 'tweetsperminute'] = 0
+            i = i+1
+    except:
+        map2 = map2
     return map2
+
+# def getTweetHistoryForParis():
+#     history = pd.read_sql_query("", db_conn)
+
+def getRetweets():
+    try:
+        rtw = pd.read_sql_query("select Top 5 REPLACE(Content, 'RT ', ''), count(Content) as count from twitter_api.TweetText \
+                                where insertedAt > convert(date, getdate()) \
+                                group by Content \
+                                order by count desc", db_conn)
+    except:
+        rtw = pd.DataFrame()
+    return rtw
 
 
 
@@ -160,11 +174,11 @@ table.dataframe(df_tweets)
 """
 messages = kafka_conn.consume(3, timeout=5)
 alert = False
-print(messages)
+#print(messages)
 for message in messages:
     if(message.error() == None):
         print(message.timestamp())
-        if(message.timestamp()[0] >= datetime.timestamp(datetime.now())-120):
+        if(message.timestamp()[0] >= datetime.timestamp(datetime.now(pytz.timezone("GMT")))-120):
             print("neu!")
             alert = True
         else:
@@ -203,7 +217,7 @@ st.pydeck_chart(r)
 
 
 """
-## Tweets Prediction ##
+## Tweets Prediction for #Paris ##
 """
 #print(regr_model.params)
 coef = regr_model.params
@@ -225,5 +239,12 @@ for t in range(len(test)):
 	#print('predicted=%f, expected=%f' % (yhat, obs))
 rmse = sqrt(mean_squared_error(test, predictions))
 #print('Test RMSE: %.3f' % rmse)
+
+"""
+## Today's most Retweeted
+"""
+df_retweets = getRetweets()
+rttable = st.empty()
+rttable.dataframe(df_retweets)
 
 ############ End page content ############
