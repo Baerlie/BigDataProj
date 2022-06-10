@@ -1,1 +1,3 @@
 secrets.toml
+.vscode/settings.json
+data/aggregates.csv
