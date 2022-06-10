@@ -6,3 +6,4 @@ pyodbc==4.0.32
 streamlit_autorefresh
 pydeck
 pickle-mixin
+confluent_kafka
