@@ -52,13 +52,13 @@ db_conn = init_db_connection()
 
 # run only once
 # set up Kafka connection
-@st.experimental_singleton
-def init_kafka_connection():
-    kafka_connect = Consumer(KAFKA_CONFIG)
-    kafka_connect.subscribe([KAFKA_TOPIC])
-    print("Kafka connection established!")
-    return kafka_connect
-kafka_conn = init_kafka_connection()
+# @st.experimental_singleton
+# def init_kafka_connection():
+#     kafka_connect = Consumer(KAFKA_CONFIG)
+#     kafka_connect.subscribe([KAFKA_TOPIC])
+#     print("Kafka connection established!")
+#     return kafka_connect
+# kafka_conn = init_kafka_connection()
 
 # run only once
 # import pickle model autoregression
@@ -74,7 +74,7 @@ regr_model = load_model()
 def getTweets(tag, minutes):
     try:
         tweets = pd.read_sql_query(f"select Tag, Content, insertedAt from twitter_api.TweetText \
-                                    where DATEDIFF(second, insertedAt, GETDATE()) < {(minutes+1)*60} and Tag like '{tag}' \
+                                    where DATEDIFF(second, insertedAt, GETDATE()) < {(minutes+2)*60} and Tag like '{tag}' \
                                     order by insertedAt desc", db_conn)
     except:
         tweets = pd.DataFrame()
@@ -102,8 +102,8 @@ def getTweetsPerMinute(map):
                             )\
                             SELECT Tagname, max(Count) as Count, Start \
                             FROM TPM \
-                            WHERE datediff(second, Start, (select max([Start]) from TPM)) < 120\
-                            and datediff(second, Start, (select max([Start]) from TPM)) >= 60\
+                            WHERE datediff(second, Start, (select max([Start]) from TPM)) < 180\
+                            and datediff(second, Start, (select max([Start]) from TPM)) >= 120\
                             group by Tagname, Start", db_conn)
 
         df_tpm = pd.DataFrame(tpm, columns =['Tagname', 'Count', 'Start'])
@@ -120,18 +120,22 @@ def getTweetsPerMinute(map):
     return map2
 
 def getTweetHistoryForParis():
-    history = pd.read_sql_query(";WITH TPM AS \
+    # get last 15 entries
+    history = pd.read_sql_query("WITH TPM AS \
                                     ( \
-                                    SELECT \
-                                        Tagname, Count, Start, \
-                                        ROW_NUMBER() OVER(PARTITION BY Tagname ORDER BY Start DESC) AS 'RowNumber' \
+                                        SELECT Tagname, \
+                                                Count, \
+                                                Start, \
+                                                ROW_NUMBER() OVER (PARTITION BY Tagname ORDER BY Start DESC) AS 'RowNumber' \
                                         FROM twitter_api.HashtagAggregations \
                                     ) \
-                                    SELECT top 15 Tagname, max(Count) as Count, Start \
-                                    FROM TPM \
-                                    WHERE Tagname = 'Paris' \
-                                    group by Tagname, Start \
-                                    order by Tagname, Start", db_conn)
+                                SELECT top 15 Tagname, max(Count) as Count, Start \
+                                FROM TPM \
+                                WHERE datediff(second, Start, (select max([Start]) from TPM)) >= 120 \
+                                and Tagname = 'Paris' \
+                                group by Tagname, Start \
+                                order by Tagname, Start desc;", db_conn)
+    history = history.iloc[::-1] # reverse
     return history
 
 def getRetweets():
