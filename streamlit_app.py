@@ -4,16 +4,15 @@ import pandas as pd
 import sqlalchemy 
 from sqlalchemy import column
 import streamlit as st
-import pytz
-import pyodbc
+#import pytz
 import pydeck as pdk
 from streamlit_autorefresh import st_autorefresh
 import pickle
 from confluent_kafka import Consumer
-from math import sqrt
-from sklearn.metrics import mean_squared_error
 import matplotlib.pyplot as plt
+import plotly.express as px
 import numpy as np
+import altair as alt
 
 # kafka connection
 KAFKA_TOPIC   = "twitter_alert"
@@ -120,8 +119,20 @@ def getTweetsPerMinute(map):
         map2 = map2
     return map2
 
-# def getTweetHistoryForParis():
-#     history = pd.read_sql_query("", db_conn)
+def getTweetHistoryForParis():
+    history = pd.read_sql_query(";WITH TPM AS \
+                                    ( \
+                                    SELECT \
+                                        Tagname, Count, Start, \
+                                        ROW_NUMBER() OVER(PARTITION BY Tagname ORDER BY Start DESC) AS 'RowNumber' \
+                                        FROM twitter_api.HashtagAggregations \
+                                    ) \
+                                    SELECT top 15 Tagname, max(Count) as Count, Start \
+                                    FROM TPM \
+                                    WHERE Tagname = 'Paris' \
+                                    group by Tagname, Start \
+                                    order by Tagname, Start", db_conn)
+    return history
 
 def getRetweets():
     try:
@@ -169,27 +180,27 @@ table.dataframe(df_tweets)
 
 
 
-"""
-## Alerting ##
-"""
-messages = kafka_conn.consume(3, timeout=5)
-alert = False
-#print(messages)
-for message in messages:
-    if(message.error() == None):
-        print(message.timestamp())
-        if(message.timestamp()[0] >= datetime.timestamp(datetime.now(pytz.timezone("GMT")))-120):
-            print("neu!")
-            alert = True
-        else:
-            print("alt!")
+# """
+# ## Alerting ##
+# """
+# messages = kafka_conn.consume(3, timeout=5)
+# alert = False
+# print(messages)
+# for message in messages:
+#     if(message.error() == None):
+#         print(message.timestamp())
+#         if(message.timestamp()[0] >= datetime.timestamp(datetime.now(pytz.timezone("GMT")))-120):
+#             print("neu!")
+#             alert = True
+#         else:
+#             print("alt!")
 
-if alert==True:
-    st.image('images/alert.gif', width=100, output_format='auto')
-    'Panic mode activated!'
-else:
-    st.image('images/check.png', width=100, output_format='auto')
-    'No alerts! Everything ok!'
+# if alert==True:
+#     st.image('images/alert.gif', width=100, output_format='auto')
+#     'Panic mode activated!'
+# else:
+#     st.image('images/check.png', width=100, output_format='auto')
+#     'No alerts! Everything ok!'
 
 
 """
@@ -219,26 +230,37 @@ st.pydeck_chart(r)
 """
 ## Tweets Prediction for #Paris ##
 """
-#print(regr_model.params)
+forecast = 5
+window = 15
 coef = regr_model.params
-history = [6, 5, 6, 3, 9, 4, 3, 7, 13, 1, 10, 12, 8, 2,
-    7, 3, 4, 6, 5, 8, 7, 4, 9, 2, 7, 7, 12, 14, 5, 12]
-test = [1,11,12,7,9]
-window = 30
-history = [history[i] for i in range(len(history))]
+history = getTweetHistoryForParis()
+history1 = history['Count'].values.tolist()
+
+# predict
+history = [history1[i] for i in range(len(history1))]
 predictions = list()
-for t in range(len(test)):
-	length = len(history)
-	lag = [history[i] for i in range(length-window,length)]
-	yhat = coef[0]
-	for d in range(window):
-		yhat += coef[d+1] * lag[window-d-1]
-	obs = test[t]
-	predictions.append(yhat)
-	history.append(obs)
-	#print('predicted=%f, expected=%f' % (yhat, obs))
-rmse = sqrt(mean_squared_error(test, predictions))
-#print('Test RMSE: %.3f' % rmse)
+for t in range(forecast):
+    length = len(history)
+    lag = [history[i] for i in range(length-window,length)]
+    yhat = coef[0]
+    for d in range(window):
+        yhat += coef[d+1] * lag[window-d-1]
+    predictions.append(yhat)
+    history.append(yhat)
+
+# plot 
+df_hist = pd.DataFrame(dict(art="History", value=history1, time=list(range(-14,1,1))))
+df_pred = pd.DataFrame(dict(art="Prediction", value=predictions, time=list(range(1,6,1))))
+df_source = pd.concat([df_hist, df_pred])
+
+chart = alt.Chart(df_source).mark_line().encode(
+    x='time',
+    y='value',
+    color='art',
+    strokeDash='art',
+)
+
+st.altair_chart(chart)
 
 """
 ## Today's most Retweeted

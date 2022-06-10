@@ -1,6 +1,8 @@
 #altair
 pandas
 streamlit
+tenacity>=6.2.0
+plotly==5.8.1
 SQLAlchemy
 pyodbc==4.0.32
 streamlit_autorefresh
