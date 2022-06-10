@@ -1,4 +1,4 @@
-altair
+#altair
 pandas
 streamlit
 SQLAlchemy
@@ -7,3 +7,6 @@ streamlit_autorefresh
 pydeck
 pickle-mixin
 confluent_kafka
+patsy==0.5.2
+statsmodels==0.13.2
+sklearn

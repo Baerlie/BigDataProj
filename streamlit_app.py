@@ -1,9 +1,3 @@
-#from collections import namedtuple
-#import altair as alt
-#import math
-#import kafka
-from enum import auto
-import time
 from datetime import datetime
 import pandas as pd
 from sqlalchemy import column
@@ -13,6 +7,8 @@ import pydeck as pdk
 from streamlit_autorefresh import st_autorefresh
 import pickle
 from confluent_kafka import Consumer
+from math import sqrt
+from sklearn.metrics import mean_squared_error
 
 # kafka connection
 KAFKA_TOPIC   = "twitter_alert"
@@ -62,6 +58,16 @@ def init_kafka_connection():
     print("Kafka connection established!")
     return kafka_connect
 kafka_conn = init_kafka_connection()
+
+# run only once
+# import pickle model autoregression
+@st.experimental_singleton
+def load_model():
+    # loading the trained model
+    pickle_in = open('data/autoregression.pkl', 'rb') 
+    regressor = pickle.load(pickle_in)
+    return regressor
+regr_model = load_model()
 
 # Perform query.
 # Uses st.experimental_memo to only rerun when the query changes or after 10 secs.
@@ -154,6 +160,7 @@ table.dataframe(df_tweets)
 """
 messages = kafka_conn.consume(3, timeout=5)
 alert = False
+print(messages)
 for message in messages:
     if(message.error() == None):
         print(message.timestamp())
@@ -198,9 +205,25 @@ st.pydeck_chart(r)
 """
 ## Tweets Prediction ##
 """
-
+#print(regr_model.params)
+coef = regr_model.params
+history = [6, 5, 6, 3, 9, 4, 3, 7, 13, 1, 10, 12, 8, 2,
+    7, 3, 4, 6, 5, 8, 7, 4, 9, 2, 7, 7, 12, 14, 5, 12]
+test = [1,11,12,7,9]
+window = 30
+history = [history[i] for i in range(len(history))]
+predictions = list()
+for t in range(len(test)):
+	length = len(history)
+	lag = [history[i] for i in range(length-window,length)]
+	yhat = coef[0]
+	for d in range(window):
+		yhat += coef[d+1] * lag[window-d-1]
+	obs = test[t]
+	predictions.append(yhat)
+	history.append(obs)
+	#print('predicted=%f, expected=%f' % (yhat, obs))
+rmse = sqrt(mean_squared_error(test, predictions))
+#print('Test RMSE: %.3f' % rmse)
 
 ############ End page content ############
-
-# close connections
-#conn.close()
